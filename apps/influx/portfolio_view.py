@@ -73,8 +73,6 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
                 'cuf_pct': None,
                 'sites_online':           0,
                 'sites_total':            0,
-                'household_sites_online': 0,
-                'household_sites_total':  0,
                 'inverters_online':       0,
                 'inverters_total':        0,
                 'loggers_online':         0,
@@ -91,11 +89,19 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
 
         include_energy = request.query_params.get('detail') != 'basic'
 
+        # Utility and Household are separate portfolio pages: one category per call.
+        category = request.query_params.get('category', Site.Category.UTILITY)
+        if category not in Site.Category.values:
+            return Response(
+                {'detail': f'Unknown category: {category}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Tenant filtering is the ONLY access control here — never read
         # request.user.installer to scope the queryset, or ADMIN and CUSTOMER break.
         sites = list(
             self.get_filtered_sites()
-            .filter(site_type=Site.SiteType.GENERATION, is_active=True)
+            .filter(site_type=Site.SiteType.GENERATION, is_active=True, category=category)
             .select_related('customer', 'installer')
             .order_by('customer__name', 'name')
         )
@@ -187,9 +193,8 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
         total_ac_capacity      = 0.0
         cuf_energy_sum   = 0.0   # energy today of sites that have AC capacity
         cuf_capacity_sum = 0.0   # their AC capacity
-        sites_online           = 0      # utility sites only
-        household_sites_online = 0
-        household_sites_total  = 0
+        sites_online           = 0
+        power_reported         = False  # False when no site reported power (household at night)
         logger_keys            = set()  # distinct loggers; household sites share one
         logger_keys_online     = set()
         inverters_online_total = 0
@@ -248,16 +253,14 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
                 if energy_month_kwh is not None:
                     total_energy_month += energy_month_kwh
 
-                total_active_power     += active_power or 0.0
+                if active_power is not None:
+                    total_active_power += active_power
+                    power_reported = True
                 if energy_today is not None:
                     total_energy_today += energy_today
                 total_ac_capacity      += float(site.ac_capacity_kw or 0)
                 household = site.category == Site.Category.HOUSEHOLD
-                if household:
-                    household_sites_total += 1
-                    if logger_online:
-                        household_sites_online += 1
-                elif logger_online:
+                if logger_online:
                     sites_online += 1
                 inverters_online_total += inv_online
                 inverters_total_total  += inv_total
@@ -305,11 +308,12 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
         return Response({
             'scope_name': self._scope_name(user),
             'portfolio_summary': {
-                'total_active_power_kw':  round(total_active_power, 2),
+                'total_active_power_kw':  round(total_active_power, 2) if power_reported else None,
                 'total_energy_today_kwh': round(total_energy_today, 2) if include_energy else None,
                 'total_energy_month_kwh': (
                     round(total_energy_month, 2)
-                    if include_energy and prior_month is not None else None
+                    if include_energy and prior_month is not None
+                    and category != Site.Category.HOUSEHOLD else None
                 ),
                 'cuf_pct': (
                     round((cuf_energy_sum / (cuf_capacity_sum * 24)) * 100, 2)
@@ -321,9 +325,7 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
                 ),
                 'ac_capacity_kw':         round(total_ac_capacity, 2),
                 'sites_online':           sites_online,
-                'sites_total':            len(sites) - household_sites_total,
-                'household_sites_online': household_sites_online,
-                'household_sites_total':  household_sites_total,
+                'sites_total':            len(sites),
                 'inverters_online':       inverters_online_total,
                 'inverters_total':        inverters_total_total,
                 'loggers_online':         len(logger_keys_online),
