@@ -62,9 +62,6 @@ class HouseholdOverviewView(TenantFilterMixin, APIView):
                 bucket       = site.customer.influx_bucket,
                 site_id      = site.influx_site_id,
                 inverter_ids = list(by_influx_id),
-                # One gateway serves every household site of this customer; its
-                # heartbeat carries the client id as the site tag (same rule as Portfolio).
-                logger_site_id = site.customer.influx_client_id or site.influx_site_id,
                 ac_capacity_kw = site.ac_capacity_kw,
                 register_inverter_ids = [
                     d.influx_device_id for d in inverters

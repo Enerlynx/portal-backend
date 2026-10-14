@@ -3694,7 +3694,7 @@ def get_annunciator_history(bucket, site_id, device_ids, date_str=None):
     
 
 # ─── Household Overview Query ────────────────────────────────────────────────
-def get_household_overview(bucket, site_id, inverter_ids, logger_site_id, ac_capacity_kw=None, register_inverter_ids=None):
+def get_household_overview(bucket, site_id, inverter_ids, ac_capacity_kw=None, register_inverter_ids=None):
     """
     Household (inverter-only) site page - one function, three internal queries.
     No meter anywhere: site power and energy are sums over the site's inverters.
@@ -3705,8 +3705,6 @@ def get_household_overview(bucket, site_id, inverter_ids, logger_site_id, ac_cap
     stays online. Site totals are the sum of the inverters that reported, and None
     when none did.
 
-    logger_site_id: site tag the gateway heartbeat is published under (the client
-    id for household sites - one gateway serves every owner of a building).
 
     Online / state rules mirror get_inverter_overview: any fresh field = online;
     inverter_status is read from the wider status window and shown only when online.
@@ -3743,7 +3741,6 @@ def get_household_overview(bucket, site_id, inverter_ids, logger_site_id, ac_cap
         today_by_device = _query_inverters_today_energy(
             query_api, bucket, site_id, inverter_ids, register_ids=register_inverter_ids
         )
-        logger_online, logger_time = _query_data_logger(query_api, bucket, logger_site_id)
     except Exception as e:
         raise Exception(f'Household overview query failed: {str(e)}')
     finally:
@@ -3848,9 +3845,13 @@ def get_household_overview(bucket, site_id, inverter_ids, logger_site_id, ac_cap
             'inverters_total':  len(inverter_ids),
             'states':           state_counts,
         },
+        # No heartbeat for household: "logger" online when any inverter sends
+        # fresh data; last_seen = newest inverter reading. Same shape as before.
         'data_logger': {
-            'status':    'online' if logger_online else 'offline',
-            'last_seen': logger_time.isoformat() if logger_time else None,
+            'status':    'online' if online_count else 'offline',
+            'last_seen': max(
+                (t.isoformat() for t in device_times.values() if t), default=None
+            ),
         },
         'inverters': inverter_list,
     }

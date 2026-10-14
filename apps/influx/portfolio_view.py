@@ -158,10 +158,6 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
             if household:
                 group['household'].add(iid)
                 group['register_map'][iid] = register_by_pk.get(site.pk, [])
-                # One gateway serves every household site of this customer; its
-                # heartbeat is published with the client id as the site tag.
-                if site.customer.influx_client_id:
-                    group['logger_tags'][iid] = site.customer.influx_client_id
         try:
             influx_results = get_portfolio_overview(bucket_groups, include_energy=include_energy)
         except Exception as e:
@@ -260,6 +256,11 @@ class PortfolioOverviewView(TenantFilterMixin, APIView):
                     total_energy_today += energy_today
                 total_ac_capacity      += float(site.ac_capacity_kw or 0)
                 household = site.category == Site.Category.HOUSEHOLD
+                if household:
+                    # No heartbeat for household: the site, and the logger shown
+                    # on its card, is online when any inverter sends fresh data.
+                    logger_online    = inv_online > 0
+                    logger_last_seen = r.get('last_updated')
                 if logger_online:
                     sites_online += 1
                 inverters_online_total += inv_online
