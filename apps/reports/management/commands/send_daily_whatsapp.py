@@ -80,6 +80,9 @@ class Command(BaseCommand):
             whatsapp_number=''
         ).select_related('site', 'site__customer')
 
+        # Household owners get their own template (send_household_whatsapp).
+        recipients = recipients.exclude(site__category=Site.Category.HOUSEHOLD)
+
         if site_pk:
             recipients = recipients.filter(site_id=site_pk)
 
