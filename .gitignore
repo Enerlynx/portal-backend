@@ -6,3 +6,7 @@ venv/
 .venv/
 __pycache__/
 *.pyc
+
+gunicorn-access.log
+gunicorn-error.log
+staticfiles/
